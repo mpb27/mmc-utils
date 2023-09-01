@@ -272,6 +272,16 @@ static struct Command commands[] = {
 	  "4. The MMC will perform a soft reset, if your system cannot handle that do not use the boot operation from mmc-utils.\n",
 	  NULL
 	},
+	{ do_resize_boot, -4,
+	    "resize_boot", "<-y|-n> " "<boot_blocks> " "<rpmb_blocks> " "<device>\n"
+		"Resize the boot partitions and RPMB area of the <device>.\n"
+		"Where <boot_blocks> specifies the numebr of 128KiB blocks to assign to each boot partition\n"
+		"Where <rpmb_blocks> specifies the number of 128KiB blocks to assign to the RPMB partition\n"
+		"Dry-run only unless -y is passed.\n"
+		"NOTE!  This is a one-time programmable (unreversible) change.\n",
+		"NOTE!  This only works on the SanDisk iNAND 7250 eMMC.",
+	  NULL
+	},	
 	{ 0, 0, 0, 0 }
 };
 

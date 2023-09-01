@@ -115,6 +115,7 @@
 #define EXT_CSD_BOOT_WP			173
 #define EXT_CSD_USER_WP			171
 #define EXT_CSD_FW_CONFIG		169	/* R/W */
+#define EXT_CSD_RPMB_MULT		168	/* RO */
 #define EXT_CSD_WR_REL_SET		167
 #define EXT_CSD_WR_REL_PARAM		166
 #define EXT_CSD_SANITIZE_START		165

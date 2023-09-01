@@ -3239,3 +3239,144 @@ dev_fd_close:
 		exit(1);
 	return 0;
 }
+
+int do_resize_boot(int nargs, char **argv)
+{
+	__u8 ext_csd[512];
+	int i;
+	int fd, ret;
+	char *device;
+	int dry_run = 1;
+	unsigned int boot_blocks, rpmb_blocks;
+	struct mmc_ioc_multi_cmd *mioc = NULL;
+
+	if (nargs != 5) {
+		fprintf(stderr, "Usage: mmc resize_boot <-y|-n> <BOOT_BLOCKS> <RPMB_BLOCKS> </path/to/mmcblkX>\n");
+		fprintf(stderr, "       where <BOOT_BLOCKS> is the number of 128KiB blocks to assign to each boot partition\n");
+		fprintf(stderr, "       and   <RPMB_BLOCKS> is the number of 128KiB blocks to assign to the RPMB partition\n");
+		exit(1);
+	}
+
+	printf("!!! WARNING                                         !!!\n");
+	printf("!!! This method only works for SanDisk iNAND 7250.  !!!\n");
+
+	// FIXME: Add check to make sure we're on SanDisk 7250.
+
+	if (!strcmp("-y", argv[1])) {
+		dry_run = 0;
+	}
+
+	boot_blocks = strtol(argv[2], NULL, 10);
+	rpmb_blocks = strtol(argv[3], NULL, 10);
+	device = argv[4];
+
+	if (boot_blocks > 255) {
+		fprintf(stderr, "Number of boot blocks (%d) cannot exceed 255.\n", boot_blocks);
+		exit(1);
+	}
+
+	if (rpmb_blocks > 128) {
+		fprintf(stderr, "Number of RPMB blocks (%d) cannot exceed 128.\n", rpmb_blocks);
+		exit(1);
+	}
+
+	fd = open(device, O_RDWR);
+	if (fd < 0) {
+		fprintf(stderr, "Could not open the specified device %s\n", device);
+		exit(1);
+	}
+
+	ret = read_extcsd(fd, ext_csd);
+	if (ret) {
+		fprintf(stderr, "Could not read EXT_CSD from %s\n", device);
+		close(fd);
+		exit(1);
+	}
+
+	printf("Current BOOT_MULT: %d  (%0.3f MiB)\n", ext_csd[EXT_CSD_BOOT_MULT],
+		ext_csd[EXT_CSD_BOOT_MULT] * 0.125f);
+	printf("Current RPMB_MULT: %d  (%0.3f MiB)\n", ext_csd[EXT_CSD_RPMB_MULT],
+		ext_csd[EXT_CSD_RPMB_MULT] * 0.125f);
+
+	if (dry_run) {
+		printf("\nTHIS IS A DRY RUN - NO CHANGES WILL BE MADE\n\n");
+	} else {
+		printf("!!! THIS IS A REAL RUN - THE BOOT SIZES WILL BE CHANGED !!!\n\n");
+	}
+
+	printf("New BOOT_MULT: %d  (%0.3f MiB)\n", boot_blocks, boot_blocks * 0.125f);
+	printf("New RPMB_MULT: %d  (%0.3f MiB)\n", rpmb_blocks, rpmb_blocks * 0.125f);
+
+	// Setup 3 commands to send. CMD62 three times, first with magic number, then
+	// with the new BOOT_SIZE_MULT, and finally with the new RPMB_SIZE_MULT.
+	mioc = calloc(1, sizeof(struct mmc_ioc_multi_cmd) + 3*sizeof(struct mmc_ioc_cmd));
+	if (!mioc) {
+		perror("failed to allocate memory");
+		close(fd);
+		exit(1);
+	}
+	
+#define MMC_MFR_CMD62 62
+#define SANDISK_7250_RESIZE_BOOT_MAGIC 0x254DDEC4
+	
+	sleep(1);
+
+	mioc->num_of_cmds = 3;
+
+	// Send CMD62 with MAGIC.
+	mioc->cmds[0].opcode = MMC_MFR_CMD62;
+	mioc->cmds[0].arg = SANDISK_7250_RESIZE_BOOT_MAGIC;
+	mioc->cmds[0].flags = MMC_RSP_R1B | MMC_CMD_AC;
+	mioc->cmds[0].write_flag = 1;
+	mioc->cmds[0].cmd_timeout_ms = 2000;
+
+	// Send CMD62 with new size of boot partitions.
+	mioc->cmds[1].opcode = MMC_MFR_CMD62;
+	mioc->cmds[1].arg = boot_blocks;
+	mioc->cmds[1].flags = MMC_RSP_R1B | MMC_CMD_AC;
+	mioc->cmds[1].write_flag = 1;
+	mioc->cmds[1].cmd_timeout_ms = 2000;
+
+	// Send CMD62 with new size of RPMB partition.
+	mioc->cmds[2].opcode = MMC_MFR_CMD62;
+	mioc->cmds[2].arg = rpmb_blocks;
+	mioc->cmds[2].flags = MMC_RSP_R1B | MMC_CMD_AC;
+	mioc->cmds[2].write_flag = 1;
+	mioc->cmds[2].cmd_timeout_ms = 60000;
+
+	// Execute.
+	if (dry_run) {
+		ret = -1;
+	} else {
+		printf("Starting eMMC boot partition size update...\n");
+		//ret = ioctl(fd, MMC_IOC_MULTI_CMD, mioc);
+
+		// Send one at a time.
+		for (i=0; i < 3; i++) {
+			ret = ioctl(fd, MMC_IOC_CMD, &mioc->cmds[i]);
+			if (ret) { fprintf(stderr, "- cmd[%d] error %d\n", i, ret); exit(1); }
+			printf(" - cmd[%d] response: 0x%x\n", i, mioc->cmds[i].response[0]);
+		}
+		
+		sleep(1);
+		printf(" - done, freeing resources\n");
+		sleep(1);
+	}
+
+	// Release resources.
+	free(mioc);
+	close(fd);
+
+	if (dry_run) {
+		printf("\n\nThis was a dry run, eMMC was not modified.\n\n");
+		return 0;
+	}
+	
+	if (ret) {
+		fprintf(stderr, "\n\n!!! MMC COMMANDS FAILED.  IOCTL ERROR = 0x%x !!!\n\n", ret);
+		exit(1);
+	}
+
+	printf("\n\nThe changes have been made, next you must power-cycle the eMMC.\n\n");
+	return 0;
+}
