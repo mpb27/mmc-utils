@@ -1371,7 +1371,7 @@ void print_mmc_csd(struct config *config, char *csd)
 			printf("v3.1-v3.31)\n");
 			break;
 		case 0x4:
-			printf("v4.0-v4.3)\n");
+			printf("v4.0-v5.1)\n");
 			break;
 		default:
 			printf("reserved)\n");
@@ -1943,7 +1943,7 @@ void print_mmc_csd(struct config *config, char *csd)
 			printf("MMC v3.1-v3.31\n");
 			break;
 		case 0x4:
-			printf("MMC v4.0-v4.3\n");
+			printf("MMC v4.0-v5.1\n");
 			break;
 		default:
 			printf("reserved\n");
